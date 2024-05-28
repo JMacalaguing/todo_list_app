@@ -5,10 +5,12 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:todo_list_app/List%20Provider/List.dart';
 import 'package:todo_list_app/List%20Provider/TodoItem.dart';
 import 'package:todo_list_app/Services/firestore.dart';
-
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  const HomePage({Key? key}) : super(key: key);
+
   @override
   _HomePageState createState() => _HomePageState();
 }
@@ -16,11 +18,36 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   List<TodoItem> todoItems = [];
   final FirestoreServices _firestoreServices = FirestoreServices();
+  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+  final FirebaseMessaging _firebaseMessaging = FirebaseMessaging.instance;
 
   @override
   void initState() {
     super.initState();
+    _configureFirebaseMessaging();
     _loadTodoItems();
+    _initializeNotifications();
+  }
+
+  void _initializeNotifications() async {
+    const AndroidInitializationSettings initializationSettingsAndroid =
+    AndroidInitializationSettings('app_icon');
+
+    final InitializationSettings initializationSettings = InitializationSettings(
+      android: initializationSettingsAndroid,
+    );
+
+    await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+  }
+
+  void _configureFirebaseMessaging() {
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      _displayNotification(message);
+    });
+
+    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      _displayNotification(message);
+    });
   }
 
   void _loadTodoItems() {
@@ -29,6 +56,82 @@ class _HomePageState extends State<HomePage> {
         todoItems = items;
       });
     });
+  }
+
+  void _displayNotification(RemoteMessage message) async {
+    final String? title = message.notification?.title;
+    final String? body = message.notification?.body;
+
+    const AndroidNotificationDetails androidPlatformChannelSpecifics =
+    AndroidNotificationDetails(
+      'your_channel_id', 'your_channel_name',
+      importance: Importance.max,
+      priority: Priority.high,
+      showWhen: false,
+    );
+
+    const NotificationDetails platformChannelSpecifics = NotificationDetails(
+      android: androidPlatformChannelSpecifics,
+    );
+
+    await flutterLocalNotificationsPlugin.show(
+      0, title, body, platformChannelSpecifics,
+      payload: 'item x',
+    );
+  }
+
+  void _scheduleNotification(TodoItem todoItem) async {
+    DateTime currentTime = DateTime.now();
+    DateTime startTime = todoItem.dateTime;
+
+    // Calculate the difference between the start time and current time
+    Duration timeDifference = startTime.difference(currentTime);
+
+    if (timeDifference <= Duration.zero) {
+      // If the start time has already passed, schedule "started" notification
+      var androidPlatformChannelSpecifics = const AndroidNotificationDetails(
+          'your_channel_id', 'your_channel_name',
+          importance: Importance.max,
+          priority: Priority.high,
+          ticker: 'ticker'
+      );
+
+      var platformChannelSpecifics = NotificationDetails(
+          android: androidPlatformChannelSpecifics
+      );
+
+      await flutterLocalNotificationsPlugin.show(
+        0,
+        'Todo Started: ${todoItem.title}',
+        'Started now',
+        platformChannelSpecifics,
+        payload: 'item x',
+      );
+    } else if (timeDifference <= const Duration(minutes: 30)) {
+      // If the start time is within the next 30 minutes, schedule "upcoming" notification
+      var scheduledNotificationDateTime =
+      startTime.subtract(const Duration(minutes: 30));
+
+      var androidPlatformChannelSpecifics = const AndroidNotificationDetails(
+          'your_channel_id', 'your_channel_name',
+          importance: Importance.max,
+          priority: Priority.high,
+          ticker: 'ticker'
+      );
+
+      var platformChannelSpecifics = NotificationDetails(
+          android: androidPlatformChannelSpecifics
+      );
+
+      await flutterLocalNotificationsPlugin.schedule(
+        0,
+        'Upcoming Todo: ${todoItem.title}',
+        'Starts in 30 minutes',
+        scheduledNotificationDateTime,
+        platformChannelSpecifics,
+        androidAllowWhileIdle: true,
+      );
+    }
   }
 
   @override
@@ -144,7 +247,7 @@ class _HomePageState extends State<HomePage> {
               actions: [
                 TextButton(
                   onPressed: () {
-                    Navigator.of(context).pop(null); // Close the dialog
+                    Navigator.of(context).pop(null);
                   },
                   child: const Text('Cancel'),
                 ),
@@ -159,7 +262,6 @@ class _HomePageState extends State<HomePage> {
                         content: Text('Please select both date and time.'),
                       ));
                     } else {
-                      // Create a new TodoItem without id
                       TodoItem newTodo = TodoItem(
                         id: '', // Temporary id
                         title: titleController.text,
@@ -172,8 +274,8 @@ class _HomePageState extends State<HomePage> {
                         ),
                       );
 
-                      // Add the todo item to Firestore
                       await _firestoreServices.addTodoItem(newTodo);
+                      _scheduleNotification(newTodo);
 
                       Navigator.of(context).pop();
                     }

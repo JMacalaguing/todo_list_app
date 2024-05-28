@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:todo_list_app/List%20Provider/TodoItem.dart';
 import 'package:todo_list_app/Services/firestore.dart';
 
+
 class TodoListWidget extends StatefulWidget {
   final List<TodoItem> todoItems;
 
@@ -53,8 +54,9 @@ class _TodoListWidgetState extends State<TodoListWidget> {
                         await _firestoreServices.deleteTodoItem(todoItem.id);
                         setState(() {
                           widget.todoItems.removeAt(index);
+
                         });
-                        Navigator.of(context).pop(); // Close the dialog
+                        Navigator.of(context).pop();
                       },
                       child: const Text('Delete'),
                     ),
